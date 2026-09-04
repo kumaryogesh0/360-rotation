@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>360 Panorama Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #000;
+    color: #f2f2f2;
+  }
+
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 14px 16px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.65), rgba(0,0,0,0));
+    pointer-events: none;
+  }
+
+  .topbar > * { pointer-events: auto; }
+
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    color: #eaeaea;
+    white-space: nowrap;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    background: rgba(26, 26, 32, 0.85);
+    backdrop-filter: blur(6px);
+    padding: 6px;
+    border-radius: 12px;
+  }
+
+  .tab-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: #9a9aa5;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .tab-btn:hover { color: #fff; }
+
+  .tab-btn.active {
+    background: #4b6bfb;
+    color: #fff;
+  }
+
+  .tab-content {
+    display: none;
+    position: fixed;
+    inset: 0;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  .viewer {
+    position: absolute;
+    inset: 0;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+    background: #000;
+  }
+
+  .stage.dragging { cursor: grabbing; }
+
+  .stage canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8c8c96;
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    background: #131318;
+  }
+
+  .controls button {
+    appearance: none;
+    border: 1px solid #2c2c34;
+    background: #1f1f27;
+    color: #f2f2f2;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+
+  .controls button:hover { background: #2a2a34; }
+  .controls button:active { transform: scale(0.94); }
+
+  .controls .reset {
+    width: auto;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .hint {
+    text-align: center;
+    font-size: 12px;
+    color: #6f6f7a;
+    padding: 10px 14px 16px;
+    background: #131318;
+  }
+
+  .pano-label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translate(-50%, -100%);
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 5;
+  }
+
+  .pano-label .pin-body {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(18, 18, 24, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+    letter-spacing: 0.2px;
+  }
+
+  .pano-label .pin-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4b6bfb;
+    flex: none;
+    box-shadow: 0 0 0 3px rgba(75, 107, 251, 0.25);
+  }
+
+  .pano-label .pin-arrow {
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 9px solid rgba(18, 18, 24, 0.92);
+    margin-top: -1px;
+  }
+
+  .coord-tooltip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: none;
+    transform: translate(-50%, -130%);
+    background: rgba(75, 107, 251, 0.95);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .coord-tooltip span {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 500;
+    opacity: 0.85;
+    margin-top: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+
+  <div class="tabs" id="tabs">
+    <button class="tab-btn active" data-target="yogesh">yogesh</button>
+    <!-- <button class="tab-btn" data-target="yogesh1">yogesh1</button> -->
+    <button class="tab-btn" data-target="yogesh2">yogesh2</button>
+    <!-- <button class="tab-btn" data-target="yogesh4">yogesh4</button> -->
+  </div>
+</div>
+
+<div class="tab-content active" id="yogesh">
+  <div class="viewer" data-viewer data-image="cheetah.jpg">
+    <div class="stage" data-stage>
+      <div class="loading" data-loading>Loading panorama&hellip;</div>
+    </div>
+    <div class="controls">
+      <button data-zoom-out>&minus;</button>
+      <button class="reset" data-reset>Reset</button>
+      <button data-zoom-in>+</button>
+    </div>
+    <!-- <div class="hint">Drag to look around &middot; Scroll or +/&minus; to zoom &middot; Pins mark nearby buildings</div> -->
+  </div>
+</div>
+<!-- 
+<div class="tab-content" id="yogesh1">
+  <div class="viewer" data-viewer data-image="rahul2.jpg">
+    <div class="stage" data-stage>
+      <div class="loading" data-loading>Loading panorama&hellip;</div>
+    </div>
+    <div class="controls">
+      <button data-zoom-out>&minus;</button>
+      <button class="reset" data-reset>Reset</button>
+      <button data-zoom-in>+</button>
+    </div>
+    <!-- <div class="hint">Drag to look around &middot; Scroll or +/&minus; to zoom &middot; Pins mark nearby buildings</div> -->
+  </div>
+</div> -->
+
+<div class="tab-content" id="yogesh2">
+  <div class="viewer" data-viewer data-image="rahul2.jpg">
+    <div class="stage" data-stage>
+      <div class="loading" data-loading>Loading panorama&hellip;</div>
+    </div>
+    <div class="controls">
+      <button data-zoom-out>&minus;</button>
+      <button class="reset" data-reset>Reset</button>
+      <button data-zoom-in>+</button>
+    </div>
+    <!-- <div class="hint">Drag to look around &middot; Scroll or +/&minus; to zoom &middot; Pins mark nearby buildings</div> -->
+  </div>
+</div>
+
+<div class="tab-content" id="yogesh4">
+  <div class="viewer" data-viewer data-image="drone_panorama.jpg">
+    <div class="stage" data-stage>
+      <div class="loading" data-loading>Loading panorama&hellip;</div>
+    </div>
+    <div class="controls">
+      <button data-zoom-out>&minus;</button>
+      <button class="reset" data-reset>Reset</button>
+      <button data-zoom-in>+</button>
+    </div>
+    <!-- <div class="hint">Drag to look around &middot; Scroll or +/&minus; to zoom &middot; Pins mark nearby buildings</div> -->
+  </div>
+</div>
+
+<script>
+  // ---- Shared texture cache (same image reused across tabs) ----
+  const textureLoader = new THREE.TextureLoader();
+  textureLoader.crossOrigin = undefined; // avoid CORS-mode fetch, which file:// pages fail
+  const textureCache = {};
+  function loadTexture(url) {
+    if (!textureCache[url]) {
+      textureCache[url] = textureLoader.loadAsync
+        ? textureLoader.loadAsync(url)
+        : new Promise((resolve, reject) => textureLoader.load(url, resolve, undefined, reject));
+    }
+    return textureCache[url];
+  }
+
+  // ---- Panorama viewer factory (Street View style: look around inside a sphere) ----
+  const DEFAULT_FOV = 75;
+  const MIN_FOV = 20;
+  const MAX_FOV = 100;
+  const LOOK_SENSITIVITY = 0.12;
+
+  // Dummy professional labels for nearby buildings, positioned by (lon, lat)
+  // on the sphere. lon/lat were mapped from each building's pixel location
+  // in the source equirectangular image (lon = 360 * x/width, lat = 90 - 180 * y/height).
+  const BUILDING_LABELS = [
+    { lon: 33,  lat: 13, name: 'Skyline Grand Hotel' },
+    { lon: 125, lat: 7,  name: 'Horizon Business Park' },
+    { lon: 185, lat: 4,  name: 'Crescent Residency Towers' },
+    { lon: 232, lat: 4,  name: 'Meridian Corporate Plaza' },
+    { lon: 342, lat: 5,  name: 'Palm Court Residences' },
+    { lon: 268.9, lat: -14.7, name: 'petrol pump' },
+  ];
+  const LABEL_RADIUS = 480; // just inside the 500-radius sphere
+  const raycaster = new THREE.Raycaster();
+  const CLICK_MOVE_THRESHOLD = 6; // px — below this, a mouseup/touchend counts as a click, not a drag
+
+  function sphToVec3(lon, lat, radius) {
+    const phi = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon);
+    return new THREE.Vector3(
+      radius * Math.sin(phi) * Math.cos(theta),
+      radius * Math.cos(phi),
+      radius * Math.sin(phi) * Math.sin(theta)
+    );
+  }
+
+  // Map-image overlays: pastes a flat image (e.g. a site map) onto the
+  // sphere across 4 corner points, keyed by tab id. Corners go clockwise:
+  // A = top-left of the image, B = top-right, C = bottom-right, D = bottom-left.
+  // Get each corner's lon/lat by clicking that exact spot on the panorama
+  // (the coordinate finder copies a ready-to-paste snippet).
+  // Example — fill in real values and uncomment to activate on a tab:
+  // const MAP_OVERLAYS = {
+  //   yogesh4: {
+  //     image: 'ashok.jpg',
+  //     corners: {
+  //       A: { lon: 40,  lat: 10 },
+  //       B: { lon: 80,  lat: 10 },
+  //       C: { lon: 80,  lat: -20 },
+  //       D: { lon: 40,  lat: -20 },
+  //     },
+  //   },
+  // };
+  const MAP_OVERLAYS = {
+    yogesh: {
+      image: 'ashok.jpg',
+      corners: {
+        A: { lon: 101,   lat: -33.3 },
+        B: { lon: 145.2, lat: -20.7 },
+        C: { lon: 178.4, lat: -25.4 },
+        D: { lon: 158.3, lat: -79.5 },
+      },
+    },
+    yogesh2: {
+      image: 'ashok.jpg',
+      corners: {
+      //  { lon: 160.2, lat: -48, name: 'Building Name' },
+      //  { lon: 248.7, lat: -49.3, name: 'Building Name' },
+      //  { lon: 323, lat: -59.9, name: 'Building Name' },
+      //  { lon: 93.5, lat: -60.2, name: 'Building Name' },
+        A: { lon: 160.2, lat: -48 },
+        B: { lon: 248.7, lat: -49.3 },
+        C: { lon: 323, lat: -59.9 },
+        D: { lon: 93.5, lat: -60.2 },
+      },
+    },
+  };
+  const MAP_OVERLAY_RADIUS = 495; // just inside the panorama sphere, in front of it
+  const MAP_OVERLAY_SEGMENTS = 24; // grid density — higher = follows sphere curvature more smoothly
+
+  function createPanoramaViewer(viewerEl) {
+    const stage = viewerEl.querySelector('[data-stage]');
+    const loadingEl = viewerEl.querySelector('[data-loading]');
+    const zoomInBtn = viewerEl.querySelector('[data-zoom-in]');
+    const zoomOutBtn = viewerEl.querySelector('[data-zoom-out]');
+    const resetBtn = viewerEl.querySelector('[data-reset]');
+    const imageUrl = viewerEl.dataset.image;
+    const tabId = viewerEl.closest('.tab-content').id;
+
+    let renderer, camera, scene, mesh;
+    let lon = 0, lat = 0, fov = DEFAULT_FOV;
+    let isDragging = false;
+    let startX = 0, startY = 0, startLon = 0, startLat = 0;
+    let started = false;
+    let animId = null;
+    let ready = false;
+    let labels = []; // { el, position: THREE.Vector3 }
+
+    function init() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(fov, 16 / 9, 0.1, 1000);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      stage.appendChild(renderer.domElement);
+
+      const geometry = new THREE.SphereGeometry(500, 60, 40);
+      geometry.scale(-1, 1, 1); // flip so texture renders on the inside
+
+      loadTexture(imageUrl).then(texture => {
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        const material = new THREE.MeshBasicMaterial({ map: texture });
+        mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+        createLabels();
+        createMapOverlay();
+        ready = true;
+        if (loadingEl) loadingEl.style.display = 'none';
+        resize();
+        render();
+      }).catch(err => {
+        if (loadingEl) loadingEl.textContent = 'Failed to load image';
+        console.error('Panorama load error:', err);
+      });
+
+      // Drag to look around
+      stage.addEventListener('mousedown', e => {
+        e.preventDefault();
+        beginDrag(e.clientX, e.clientY);
+      });
+      window.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+      window.addEventListener('mouseup', e => endDrag(e.clientX, e.clientY));
+
+      stage.addEventListener('touchstart', e => {
+        const t = e.touches[0];
+        beginDrag(t.clientX, t.clientY);
+      }, { passive: true });
+      stage.addEventListener('touchmove', e => {
+        const t = e.touches[0];
+        moveDrag(t.clientX, t.clientY);
+      }, { passive: true });
+      stage.addEventListener('touchend', e => {
+        const t = e.changedTouches[0];
+        endDrag(t.clientX, t.clientY);
+      });
+
+      // Zoom via scroll (changes field of view, like real street view)
+      stage.addEventListener('wheel', e => {
+        e.preventDefault();
+        setFov(fov + (e.deltaY > 0 ? 4 : -4));
+      }, { passive: false });
+
+      zoomInBtn.addEventListener('click', () => setFov(fov - 8));
+      zoomOutBtn.addEventListener('click', () => setFov(fov + 8));
+      resetBtn.addEventListener('click', () => {
+        lon = 0; lat = 0;
+        setFov(DEFAULT_FOV);
+        render();
+      });
+
+      window.addEventListener('resize', resize);
+    }
+
+    function createLabels() {
+      labels = BUILDING_LABELS.map(def => {
+        const phi = THREE.MathUtils.degToRad(90 - def.lat);
+        const theta = THREE.MathUtils.degToRad(def.lon);
+        const position = new THREE.Vector3(
+          LABEL_RADIUS * Math.sin(phi) * Math.cos(theta),
+          LABEL_RADIUS * Math.cos(phi),
+          LABEL_RADIUS * Math.sin(phi) * Math.sin(theta)
+        );
+
+        const el = document.createElement('div');
+        el.className = 'pano-label';
+        el.innerHTML =
+          '<div class="pin-body"><span class="pin-dot"></span>' + def.name + '</div>' +
+          '<div class="pin-arrow"></div>';
+        stage.appendChild(el);
+
+        return { el, position };
+      });
+    }
+
+    function updateLabels() {
+      if (!labels.length) return;
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      const w = stage.clientWidth || 1;
+      const h = stage.clientHeight || 1;
+
+      labels.forEach(({ el, position }) => {
+        const pointDir = position.clone().normalize();
+        const facing = pointDir.dot(camDir);
+
+        if (facing < 0.2) {
+          el.style.display = 'none';
+          return;
+        }
+
+        const ndc = position.clone().project(camera);
+        el.style.display = 'flex';
+        el.style.left = ((ndc.x * 0.5 + 0.5) * w) + 'px';
+        el.style.top = ((-ndc.y * 0.5 + 0.5) * h) + 'px';
+      });
+    }
+
+    function createMapOverlay() {
+      const def = MAP_OVERLAYS[tabId];
+      if (!def) return;
+
+      loadTexture(def.image).then(texture => {
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+
+        const { A, B, C, D } = def.corners;
+        const posA = sphToVec3(A.lon, A.lat, MAP_OVERLAY_RADIUS);
+        const posB = sphToVec3(B.lon, B.lat, MAP_OVERLAY_RADIUS);
+        const posC = sphToVec3(C.lon, C.lat, MAP_OVERLAY_RADIUS);
+        const posD = sphToVec3(D.lon, D.lat, MAP_OVERLAY_RADIUS);
+
+        const seg = MAP_OVERLAY_SEGMENTS;
+        const positions = [];
+        const uvs = [];
+        const indices = [];
+
+        for (let j = 0; j <= seg; j++) {
+          const v = j / seg;
+          for (let i = 0; i <= seg; i++) {
+            const u = i / seg;
+            const top = posA.clone().lerp(posB, u);
+            const bottom = posD.clone().lerp(posC, u);
+            const p = top.lerp(bottom, v);
+            p.normalize().multiplyScalar(MAP_OVERLAY_RADIUS); // hug the sphere's curvature
+            positions.push(p.x, p.y, p.z);
+            uvs.push(u, 1 - v);
+          }
+        }
+        for (let j = 0; j < seg; j++) {
+          for (let i = 0; i < seg; i++) {
+            const a = j * (seg + 1) + i;
+            const b = a + 1;
+            const c = a + (seg + 1);
+            const d = c + 1;
+            indices.push(a, c, b, b, c, d);
+          }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.DoubleSide,
+          transparent: true,
+        });
+        const overlayMesh = new THREE.Mesh(geometry, material);
+        scene.add(overlayMesh);
+      }).catch(err => {
+        console.error('Map overlay failed to load:', def.image, err);
+      });
+    }
+
+    function beginDrag(x, y) {
+      isDragging = true;
+      startX = x; startY = y;
+      startLon = lon; startLat = lat;
+      stage.classList.add('dragging');
+    }
+
+    function moveDrag(x, y) {
+      if (!isDragging) return;
+      lon = startLon - (x - startX) * LOOK_SENSITIVITY;
+      lat = startLat + (y - startY) * LOOK_SENSITIVITY;
+      lat = Math.max(-85, Math.min(85, lat));
+      render();
+    }
+
+    function endDrag(x, y) {
+      const moved = Math.hypot(x - startX, y - startY);
+      isDragging = false;
+      stage.classList.remove('dragging');
+      if (moved < CLICK_MOVE_THRESHOLD) {
+        inspectPoint(x, y);
+      }
+    }
+
+    // ---- Coordinate finder: click a spot to get its lon/lat for BUILDING_LABELS ----
+    function inspectPoint(clientX, clientY) {
+      if (!ready || !mesh) return;
+      const rect = stage.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1
+      );
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObject(mesh);
+      if (!hits.length) return;
+
+      const p = hits[0].point;
+      const radius = p.length();
+      let hitLat = 90 - THREE.MathUtils.radToDeg(Math.acos(p.y / radius));
+      let hitLon = THREE.MathUtils.radToDeg(Math.atan2(p.z, p.x));
+      if (hitLon < 0) hitLon += 360;
+      hitLat = Math.round(hitLat * 10) / 10;
+      hitLon = Math.round(hitLon * 10) / 10;
+
+      const snippet = `{ lon: ${hitLon}, lat: ${hitLat}, name: 'Building Name' },`;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(snippet).catch(() => {});
+      }
+      console.log('Panorama coordinates:', snippet);
+      showCoordTooltip(clientX - rect.left, clientY - rect.top, hitLon, hitLat);
+    }
+
+    let coordTooltipEl = null;
+    let coordTooltipTimer = null;
+    function showCoordTooltip(x, y, hitLon, hitLat) {
+      if (!coordTooltipEl) {
+        coordTooltipEl = document.createElement('div');
+        coordTooltipEl.className = 'coord-tooltip';
+        stage.appendChild(coordTooltipEl);
+      }
+      coordTooltipEl.style.left = x + 'px';
+      coordTooltipEl.style.top = y + 'px';
+      coordTooltipEl.innerHTML =
+        `lon: ${hitLon}&deg; &middot; lat: ${hitLat}&deg;<br><span>copied &mdash; paste into BUILDING_LABELS</span>`;
+      coordTooltipEl.style.display = 'block';
+
+      clearTimeout(coordTooltipTimer);
+      coordTooltipTimer = setTimeout(() => {
+        if (coordTooltipEl) coordTooltipEl.style.display = 'none';
+      }, 4000);
+    }
+
+    function setFov(v) {
+      fov = Math.max(MIN_FOV, Math.min(MAX_FOV, v));
+      if (camera) {
+        camera.fov = fov;
+        camera.updateProjectionMatrix();
+      }
+      render();
+    }
+
+    function resize() {
+      if (!renderer || !camera) return;
+      const w = stage.clientWidth || 1;
+      const h = stage.clientHeight || 1;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      render();
+    }
+
+    function render() {
+      if (!ready) return;
+      const phi = THREE.MathUtils.degToRad(90 - lat);
+      const theta = THREE.MathUtils.degToRad(lon);
+      const target = new THREE.Vector3(
+        500 * Math.sin(phi) * Math.cos(theta),
+        500 * Math.cos(phi),
+        500 * Math.sin(phi) * Math.sin(theta)
+      );
+      camera.lookAt(target);
+      renderer.render(scene, camera);
+      updateLabels();
+    }
+
+    return {
+      activate() {
+        if (!started) {
+          started = true;
+          init();
+        } else {
+          resize();
+          render();
+        }
+      },
+    };
+  }
+
+  // ---- Init first tab immediately, others lazily on first view ----
+  const viewers = {};
+  document.querySelectorAll('[data-viewer]').forEach(el => {
+    const tabId = el.closest('.tab-content').id;
+    viewers[tabId] = createPanoramaViewer(el);
+  });
+  viewers['yogesh'].activate();
+
+  // ---- Tab switching ----
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      tabContents.forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      const target = btn.dataset.target;
+      document.getElementById(target).classList.add('active');
+      viewers[target].activate();
+    });
+  });
+</script>
+
+</body>
+</html>

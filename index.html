@@ -164,51 +164,184 @@
     background: #131318;
   }
 
-  .pano-label {
+  /* Always-on circular pin marking a building on the sphere. Idle pins stay
+     quiet (small glass bead); the focused one lights up with a red glow,
+     a sonar-style pulse, and a slowly-rotating radar ring. */
+  .pin-marker {
     position: absolute;
     top: 0;
     left: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    transform: translate(-50%, -100%);
+    width: 16px;
+    height: 16px;
+    transform: translate(-50%, -50%);
     pointer-events: none;
-    transition: opacity 0.15s ease;
     z-index: 5;
   }
 
-  .pano-label .pin-body {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(18, 18, 24, 0.92);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    color: #fff;
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 12.5px;
-    font-weight: 600;
-    white-space: nowrap;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
-    letter-spacing: 0.2px;
-  }
-
-  .pano-label .pin-dot {
-    width: 7px;
-    height: 7px;
+  .pin-marker-core {
+    position: absolute;
+    inset: 0;
     border-radius: 50%;
-    background: #4b6bfb;
-    flex: none;
-    box-shadow: 0 0 0 3px rgba(75, 107, 251, 0.25);
+    background: radial-gradient(circle at 32% 28%, #ffffff, #ced1d9 72%);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.4);
+    transition: background 0.25s ease, box-shadow 0.25s ease;
   }
 
-  .pano-label .pin-arrow {
-    width: 0;
-    height: 0;
-    border-left: 6px solid transparent;
-    border-right: 6px solid transparent;
-    border-top: 9px solid rgba(18, 18, 24, 0.92);
-    margin-top: -1px;
+  .pin-marker.active .pin-marker-core {
+    background: radial-gradient(circle at 32% 28%, #ff5f72, #c8102e 75%);
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 0 14px 2px rgba(224, 18, 43, 0.75);
+  }
+
+  .pin-marker-pulse {
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 2px solid rgba(224, 18, 43, 0.7);
+    opacity: 0;
+  }
+
+  .pin-marker.active .pin-marker-pulse {
+    animation: pin-pulse 1.8s ease-out infinite;
+  }
+
+  @keyframes pin-pulse {
+    0%   { transform: scale(0.6); opacity: 0.9; }
+    100% { transform: scale(2.1); opacity: 0; }
+  }
+
+  /* Slowly-rotating dashed reticle — only lit up on the currently focused pin */
+  .pin-marker-ring {
+    position: absolute;
+    inset: -13px;
+    border-radius: 50%;
+    border: 1.5px dashed rgba(224, 18, 43, 0);
+    opacity: 0;
+    transition: opacity 0.3s ease, border-color 0.3s ease;
+    animation: pin-ring-spin 7s linear infinite;
+  }
+
+  .pin-marker.active .pin-marker-ring {
+    opacity: 1;
+    border-color: rgba(224, 18, 43, 0.55);
+  }
+
+  @keyframes pin-ring-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  /* SVG leader line + arrowhead connecting the focused pin to its callout */
+  .leader-lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* The line "draws" from the callout card down to the pin as it appears, and
+     retracts back into the card the same way when it's no longer the focus. */
+  .leader-line {
+    stroke: #ff3b52;
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 4px rgba(224, 18, 43, 0.7));
+    transition: stroke-dashoffset 0.34s ease-in 0.04s;
+  }
+
+  .leader-line.visible {
+    transition: stroke-dashoffset 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0s;
+  }
+
+  .leader-arrowhead {
+    fill: #ff3b52;
+    opacity: 0;
+    filter: drop-shadow(0 0 4px rgba(224, 18, 43, 0.7));
+    transition: opacity 0.14s ease 0s;
+  }
+
+  .leader-arrowhead.visible {
+    opacity: 1;
+    transition: opacity 0.16s ease 0.4s; /* lands just as the line reaches the pin */
+  }
+
+  /* Glass callout card that appears beside whichever pin(s) are in focus.
+     --focus-scale / --glow are set per-frame in JS from how centered the
+     pin is, so the most-centered building's card sits subtly larger and
+     brighter than the others — a soft depth-of-field cue. */
+  .pin-callout {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, -100%) translateY(10px) scale(0.8);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease 0s, transform 0.16s ease 0s;
+    z-index: 6;
+  }
+
+  .pin-callout.visible {
+    opacity: 1;
+    transform: translate(-50%, -100%) translateY(0) scale(var(--focus-scale, 1));
+    transition: opacity 0.32s ease 0.16s, transform 0.46s cubic-bezier(0.34, 1.56, 0.64, 1) 0.16s;
+  }
+
+  .pin-callout-box {
+    position: relative;
+    display: inline-block;
+    background: linear-gradient(160deg, rgba(216, 34, 58, 0.62), rgba(110, 8, 24, 0.62));
+    backdrop-filter: blur(14px) saturate(180%);
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
+    color: #fff;
+    padding: 9px 18px;
+    border-radius: 12px;
+    font-size: 13.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    letter-spacing: 0.2px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow:
+      0 12px 32px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      0 0 26px rgb(224 18 43 / var(--glow, 0.35));
+    animation: card-float 4.5s ease-in-out infinite;
+  }
+
+  @keyframes card-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+  }
+
+  /* Glass sheen across the top of the card */
+  .pin-callout-box::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 55%);
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+
+  .pin-callout-box::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -5px;
+    width: 12px;
+    height: 12px;
+    background: rgba(130, 10, 26, 0.75);
+    border-right: 1px solid rgba(255, 255, 255, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(14px) saturate(180%);
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
+    transform: translateX(-50%) rotate(45deg);
+    border-radius: 2px;
+    z-index: -1;
   }
 
   .coord-tooltip {
@@ -360,7 +493,7 @@
   // Example — fill in real values and uncomment to activate on a tab:
   // const MAP_OVERLAYS = {
   //   yogesh4: {
-  //     image: 'ashok.jpg',
+  //     image: 'ashok2.png',
   //     corners: {
   //       A: { lon: 40,  lat: 10 },
   //       B: { lon: 80,  lat: 10 },
@@ -371,7 +504,7 @@
   // };
   const MAP_OVERLAYS = {
     yogesh: {
-      image: 'ashok.jpg',
+      image: 'ashok2.png',
       corners: {
         A: { lon: 101,   lat: -33.3 },
         B: { lon: 145.2, lat: -20.7 },
@@ -380,7 +513,7 @@
       },
     },
     yogesh2: {
-      image: 'ashok.jpg',
+      image: 'ashok2.png',
       corners: {
       //  { lon: 160.2, lat: -48, name: 'Building Name' },
       //  { lon: 248.7, lat: -49.3, name: 'Building Name' },
@@ -412,7 +545,8 @@
     let started = false;
     let animId = null;
     let ready = false;
-    let labels = []; // { el, position: THREE.Vector3 }
+    let labels = []; // { markerEl, calloutEl, lineEl, tickEl, position: THREE.Vector3, active }
+    let leaderSvg = null;
 
     function init() {
       scene = new THREE.Scene();
@@ -481,8 +615,33 @@
       window.addEventListener('resize', resize);
     }
 
+    // ---- Building callouts: always-on pin dots + a red "krpano-style" leader
+    // arrow + label that activates for whichever pin(s) are near screen-center.
+    //
+    // The activation cone scales with zoom (fov / DISTANCE_POPUP_DIVISOR), same idea
+    // as krpano's own "distancepopup" callout setting, so zooming in narrows it.
+    // A callout only drops once a pin drifts well past that cone (EXIT_ANGLE_MULT)
+    // and has been up for at least MIN_HOLD_MS — that hysteresis is what stops two
+    // nearby buildings from rapidly swapping/flickering while dragging.
+    const DISTANCE_POPUP_DIVISOR = 5;
+    const EXIT_ANGLE_MULT = 1.6;
+    const MIN_HOLD_MS = 400;
+    const MAX_ACTIVE_CALLOUTS = 4;
+    const CALLOUT_OFFSET_X = 74;
+    const CALLOUT_OFFSET_Y = 84;
+    const CALLOUT_GAP = 10;       // enforced clear space between neighboring callout boxes
+    const SIDE_FLIP_MARGIN = 50;  // px past screen-center before a box flips side (stops jitter)
+    const ARROW_SETBACK = 13;     // px the line stops short of the pin, where the arrowhead fills in
+    const ARROW_LEN = 12;
+    const ARROW_HALF_W = 5;
+
     function createLabels() {
-      labels = BUILDING_LABELS.map(def => {
+      const svgNs = 'http://www.w3.org/2000/svg';
+      leaderSvg = document.createElementNS(svgNs, 'svg');
+      leaderSvg.setAttribute('class', 'leader-lines');
+      stage.appendChild(leaderSvg);
+
+      labels = BUILDING_LABELS.map((def, index) => {
         const phi = THREE.MathUtils.degToRad(90 - def.lat);
         const theta = THREE.MathUtils.degToRad(def.lon);
         const position = new THREE.Vector3(
@@ -491,38 +650,189 @@
           LABEL_RADIUS * Math.sin(phi) * Math.sin(theta)
         );
 
-        const el = document.createElement('div');
-        el.className = 'pano-label';
-        el.innerHTML =
-          '<div class="pin-body"><span class="pin-dot"></span>' + def.name + '</div>' +
-          '<div class="pin-arrow"></div>';
-        stage.appendChild(el);
+        const markerEl = document.createElement('div');
+        markerEl.className = 'pin-marker';
+        markerEl.innerHTML = '<span class="pin-marker-ring"></span><span class="pin-marker-pulse"></span><span class="pin-marker-core"></span>';
+        stage.appendChild(markerEl);
 
-        return { el, position };
+        const calloutEl = document.createElement('div');
+        calloutEl.className = 'pin-callout';
+        calloutEl.innerHTML = '<span class="pin-callout-box">' + def.name + '</span>';
+        stage.appendChild(calloutEl);
+
+        const lineEl = document.createElementNS(svgNs, 'line');
+        lineEl.setAttribute('class', 'leader-line');
+        const arrowEl = document.createElementNS(svgNs, 'polygon');
+        arrowEl.setAttribute('class', 'leader-arrowhead');
+        leaderSvg.appendChild(lineEl);
+        leaderSvg.appendChild(arrowEl);
+
+        return {
+          index, markerEl, calloutEl, lineEl, arrowEl, position,
+          active: false, activatedAt: 0, calloutSide: null, lineLength: 0,
+          screenX: 0, screenY: 0, angleDeg: 999,
+        };
       });
     }
 
+    // Positions every pin each frame, decides which pins currently "own" a callout
+    // (with hysteresis so the choice is stable while dragging), then lays those
+    // callouts out so their boxes never overlap.
     function updateLabels() {
       if (!labels.length) return;
       const camDir = new THREE.Vector3();
       camera.getWorldDirection(camDir);
       const w = stage.clientWidth || 1;
       const h = stage.clientHeight || 1;
+      const now = performance.now();
 
-      labels.forEach(({ el, position }) => {
-        const pointDir = position.clone().normalize();
+      const visible = [];
+      labels.forEach(label => {
+        const pointDir = label.position.clone().normalize();
         const facing = pointDir.dot(camDir);
 
         if (facing < 0.2) {
-          el.style.display = 'none';
+          label.markerEl.style.display = 'none';
+          if (label.active) deactivateCallout(label);
           return;
         }
 
-        const ndc = position.clone().project(camera);
-        el.style.display = 'flex';
-        el.style.left = ((ndc.x * 0.5 + 0.5) * w) + 'px';
-        el.style.top = ((-ndc.y * 0.5 + 0.5) * h) + 'px';
+        const ndc = label.position.clone().project(camera);
+        label.screenX = (ndc.x * 0.5 + 0.5) * w;
+        label.screenY = (-ndc.y * 0.5 + 0.5) * h;
+        label.angleDeg = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(facing, -1, 1)));
+
+        label.markerEl.style.display = 'flex';
+        label.markerEl.style.left = label.screenX + 'px';
+        label.markerEl.style.top = label.screenY + 'px';
+        visible.push(label);
       });
+
+      const enterAngle = fov / DISTANCE_POPUP_DIVISOR;
+      const exitAngle = enterAngle * EXIT_ANGLE_MULT;
+
+      labels.forEach(label => {
+        if (!label.active) return;
+        const stillVisible = visible.indexOf(label) !== -1;
+        const tooFar = !stillVisible || label.angleDeg > exitAngle;
+        if (tooFar && now - label.activatedAt > MIN_HOLD_MS) deactivateCallout(label);
+      });
+
+      let activeCount = labels.reduce((n, l) => n + (l.active ? 1 : 0), 0);
+      if (activeCount < MAX_ACTIVE_CALLOUTS) {
+        const candidates = visible
+          .filter(label => !label.active && label.angleDeg < enterAngle)
+          .sort((a, b) => a.angleDeg - b.angleDeg);
+        for (const label of candidates) {
+          if (activeCount >= MAX_ACTIVE_CALLOUTS) break;
+          activateCallout(label, now);
+          activeCount++;
+        }
+      }
+
+      layoutCallouts(labels.filter(label => label.active), w, enterAngle);
+    }
+
+    function activateCallout(label, now) {
+      label.active = true;
+      label.activatedAt = now;
+      label.markerEl.classList.add('active');
+    }
+
+    function deactivateCallout(label) {
+      label.active = false;
+      label.markerEl.classList.remove('active');
+      label.calloutEl.classList.remove('visible');
+      label.lineEl.classList.remove('visible');
+      label.arrowEl.classList.remove('visible');
+      if (label.lineLength) label.lineEl.style.strokeDashoffset = label.lineLength + 'px';
+    }
+
+    // Places every active callout box beside its pin, nudging any box that would
+    // overlap an already-placed one further up its own sightline until it's clear.
+    // A fixed sort order (definition order, not live screen position) keeps that
+    // nudging stable frame to frame instead of jittering when two pins are close.
+    function layoutCallouts(activeLabels, viewportW, enterAngle) {
+      const placedRects = [];
+      const ordered = activeLabels.slice().sort((a, b) => a.index - b.index);
+
+      ordered.forEach(label => {
+        if (label.calloutSide === null) {
+          label.calloutSide = label.screenX > viewportW / 2 ? -1 : 1;
+        } else if (label.calloutSide === 1 && label.screenX > viewportW / 2 + SIDE_FLIP_MARGIN) {
+          label.calloutSide = -1;
+        } else if (label.calloutSide === -1 && label.screenX < viewportW / 2 - SIDE_FLIP_MARGIN) {
+          label.calloutSide = 1;
+        }
+
+        const boxW = label.calloutEl.offsetWidth || 130;
+        const boxH = label.calloutEl.offsetHeight || 32;
+        const anchorX = label.screenX + label.calloutSide * CALLOUT_OFFSET_X;
+        let anchorY = label.screenY - CALLOUT_OFFSET_Y;
+
+        let rect = { left: anchorX - boxW / 2, right: anchorX + boxW / 2, top: anchorY - boxH, bottom: anchorY };
+        let guard = 0;
+        while (guard++ < 30 && placedRects.some(r => rectsOverlap(rect, r, CALLOUT_GAP))) {
+          anchorY -= boxH * 0.6 + CALLOUT_GAP;
+          rect = { left: anchorX - boxW / 2, right: anchorX + boxW / 2, top: anchorY - boxH, bottom: anchorY };
+        }
+
+        placedRects.push(rect);
+        positionCallout(label, anchorX, anchorY, enterAngle);
+      });
+    }
+
+    function rectsOverlap(a, b, gap) {
+      return !(a.right + gap < b.left || a.left - gap > b.right || a.bottom + gap < b.top || a.top - gap > b.bottom);
+    }
+
+    function positionCallout(label, calloutX, calloutY, enterAngle) {
+      // How dead-center this pin is (1 = perfectly centered, 0 = at the edge of the
+      // activation cone) drives a soft depth-of-field cue: the focused building's
+      // card sits a touch larger and glows brighter than the others in view.
+      const focus = THREE.MathUtils.clamp(1 - label.angleDeg / enterAngle, 0, 1);
+      label.calloutEl.style.setProperty('--focus-scale', (1 + focus * 0.1).toFixed(3));
+      label.calloutEl.style.setProperty('--glow', (0.25 + focus * 0.4).toFixed(2));
+
+      label.calloutEl.style.left = calloutX + 'px';
+      label.calloutEl.style.top = calloutY + 'px';
+      label.calloutEl.classList.add('visible');
+
+      const dx = label.screenX - calloutX;
+      const dy = label.screenY - calloutY;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const px = -uy, py = ux;
+
+      const baseX = label.screenX - ux * ARROW_SETBACK;
+      const baseY = label.screenY - uy * ARROW_SETBACK;
+
+      label.lineEl.setAttribute('x1', calloutX);
+      label.lineEl.setAttribute('y1', calloutY);
+      label.lineEl.setAttribute('x2', baseX);
+      label.lineEl.setAttribute('y2', baseY);
+
+      const backX = label.screenX - ux * ARROW_LEN;
+      const backY = label.screenY - uy * ARROW_LEN;
+      label.arrowEl.setAttribute('points',
+        label.screenX + ',' + label.screenY + ' ' +
+        (backX + px * ARROW_HALF_W) + ',' + (backY + py * ARROW_HALF_W) + ' ' +
+        (backX - px * ARROW_HALF_W) + ',' + (backY - py * ARROW_HALF_W)
+      );
+      label.arrowEl.classList.add('visible');
+
+      const wasVisible = label.lineEl.classList.contains('visible');
+      const lineLen = Math.hypot(baseX - calloutX, baseY - calloutY) || 1;
+      label.lineLength = lineLen;
+      label.lineEl.style.strokeDasharray = lineLen + 'px';
+      label.lineEl.classList.add('visible');
+      if (!wasVisible) {
+        // start fully retracted, then let the .visible transition draw it out
+        label.lineEl.style.strokeDashoffset = lineLen + 'px';
+        requestAnimationFrame(() => { label.lineEl.style.strokeDashoffset = '0px'; });
+      } else {
+        label.lineEl.style.strokeDashoffset = '0px';
+      }
     }
 
     function createMapOverlay() {
